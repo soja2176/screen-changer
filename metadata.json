@@ -1,0 +1,6 @@
+{
+  "name": "Resolution Changer",
+  "description": "Modifica la resolución y densidad de pantalla de tu dispositivo mediante ADB local sin PC ni root.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
