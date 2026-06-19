@@ -64,6 +64,8 @@ fun ResolutionChangerApp(
     viewModel: ResolutionViewModel = viewModel()
 ) {
     val connectionState by viewModel.connectionState.collectAsState()
+    val workingMode by viewModel.workingMode.collectAsState()
+    
     val physicalW by viewModel.physicalWidth.collectAsState()
     val physicalH by viewModel.physicalHeight.collectAsState()
     val physicalDpi by viewModel.physicalDensity.collectAsState()
@@ -80,6 +82,7 @@ fun ResolutionChangerApp(
     val terminalOutput by viewModel.terminalOutput.collectAsState()
     val isCountdownActive by viewModel.safetyCountdownActive.collectAsState()
     val secondsLeft by viewModel.safetySecondsLeft.collectAsState()
+    val isScanning by viewModel.isScanning.collectAsState()
 
     var showGuide by remember { mutableStateOf(false) }
     var userCmdInput by remember { mutableStateOf("") }
@@ -91,36 +94,119 @@ fun ResolutionChangerApp(
                 .fillMaxSize()
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
-            contentPadding = PaddingValues(top = 8.dp, bottom = 120.dp)
+            contentPadding = PaddingValues(top = 16.dp, bottom = 120.dp)
         ) {
             // Header Hero Area
             item {
-                Text(
-                    text = "Resolution Changer Pro",
-                    style = MaterialTheme.typography.headlineLarge.copy(
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = (-0.5).sp
-                    ),
-                    modifier = Modifier.padding(top = 16.dp)
-                )
-                Text(
-                    text = "Modifica la resolución y relación de aspecto de tu Android de forma completamente local por ADB inalámbrico.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "Pantalla",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(40.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "Resolution Changer Pro",
+                            style = MaterialTheme.typography.headlineMedium.copy(
+                                fontWeight = FontWeight.ExtraBold,
+                                letterSpacing = (-0.5).sp
+                            )
+                        )
+                        Text(
+                            text = "Modifica la resolución y densidad sin root por ADB local inalámbrico, acceso Root directo, o modo de simulación segura.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
 
-            // Connection Status & Controls Card
+            // Method Selector tabs
+            item {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Método de Conexión / Ejecución:",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                shape = RoundedCornerShape(16.dp)
+                            )
+                            .padding(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        val modes = listOf(
+                            Triple(AdbManager.WorkingMode.SIMULATED, "Simulado (Demo)", Icons.Default.Science),
+                            Triple(AdbManager.WorkingMode.ADB_WIRELESS, "ADB Wifi", Icons.Default.SettingsInputAntenna),
+                            Triple(AdbManager.WorkingMode.ROOT_SU, "Root Directo", Icons.Default.DirectionsRun)
+                        )
+                        
+                        modes.forEach { (mode, label, icon) ->
+                            val isSelected = workingMode == mode
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        if (isSelected) MaterialTheme.colorScheme.primary
+                                        else Color.Transparent
+                                    )
+                                    .clickable {
+                                        viewModel.setWorkingMode(mode)
+                                    }
+                                    .padding(vertical = 10.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(
+                                        imageVector = icon,
+                                        contentDescription = label,
+                                        tint = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = label,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Connection Details Card (Dynamic based on selected mode)
             item {
                 Card(
                     shape = RoundedCornerShape(24.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = when (connectionState) {
-                            is AdbManager.ConnectionState.Connected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
-                            is AdbManager.ConnectionState.Connecting -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.15f)
-                            is AdbManager.ConnectionState.Error -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f)
-                            else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                        containerColor = when (workingMode) {
+                            AdbManager.WorkingMode.SIMULATED -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
+                            AdbManager.WorkingMode.ROOT_SU -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.15f)
+                            AdbManager.WorkingMode.ADB_WIRELESS -> {
+                                when (connectionState) {
+                                    is AdbManager.ConnectionState.Connected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+                                    is AdbManager.ConnectionState.Connecting -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.15f)
+                                    is AdbManager.ConnectionState.Error -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f)
+                                    else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                                }
+                            }
                         }
                     ),
                     modifier = Modifier.testTag("connection_card")
@@ -131,49 +217,74 @@ fun ResolutionChangerApp(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Icon(
-                                imageVector = when (connectionState) {
-                                    is AdbManager.ConnectionState.Connected -> Icons.Default.Dns
-                                    is AdbManager.ConnectionState.Connecting -> Icons.Default.Refresh
-                                    is AdbManager.ConnectionState.Error -> Icons.Default.Warning
-                                    else -> Icons.Default.DeveloperMode
+                                imageVector = when (workingMode) {
+                                    AdbManager.WorkingMode.SIMULATED -> Icons.Default.PlayArrow
+                                    AdbManager.WorkingMode.ROOT_SU -> Icons.Default.Bolt
+                                    AdbManager.WorkingMode.ADB_WIRELESS -> {
+                                        when (connectionState) {
+                                            is AdbManager.ConnectionState.Connected -> Icons.Default.Dns
+                                            is AdbManager.ConnectionState.Connecting -> Icons.Default.Refresh
+                                            is AdbManager.ConnectionState.Error -> Icons.Default.Warning
+                                            else -> Icons.Default.DeveloperMode
+                                        }
+                                    }
                                 },
                                 contentDescription = "Conexión",
-                                tint = when (connectionState) {
-                                    is AdbManager.ConnectionState.Connected -> MaterialTheme.colorScheme.primary
-                                    is AdbManager.ConnectionState.Connecting -> MaterialTheme.colorScheme.tertiary
-                                    is AdbManager.ConnectionState.Error -> MaterialTheme.colorScheme.error
-                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                tint = when (workingMode) {
+                                    AdbManager.WorkingMode.SIMULATED -> MaterialTheme.colorScheme.primary
+                                    AdbManager.WorkingMode.ROOT_SU -> MaterialTheme.colorScheme.tertiary
+                                    AdbManager.WorkingMode.ADB_WIRELESS -> {
+                                        when (connectionState) {
+                                            is AdbManager.ConnectionState.Connected -> MaterialTheme.colorScheme.primary
+                                            is AdbManager.ConnectionState.Connecting -> MaterialTheme.colorScheme.tertiary
+                                            is AdbManager.ConnectionState.Error -> MaterialTheme.colorScheme.error
+                                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                        }
+                                    }
                                 },
                                 modifier = Modifier.size(28.dp)
                             )
                             Spacer(modifier = Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Estado del ADB Local",
+                                    text = when (workingMode) {
+                                        AdbManager.WorkingMode.SIMULATED -> "Modo Simulación Activo"
+                                        AdbManager.WorkingMode.ROOT_SU -> "Modo Root Directo Activo"
+                                        AdbManager.WorkingMode.ADB_WIRELESS -> "Estado del ADB Inalámbrico"
+                                    },
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = when (connectionState) {
-                                        is AdbManager.ConnectionState.Connected -> "Conectado a Wireless Debugging"
-                                        is AdbManager.ConnectionState.Connecting -> "Intentando enlace local..."
-                                        is AdbManager.ConnectionState.Error -> "Desconectado (Error de conexión)"
-                                        else -> "Sin enlace local activo"
+                                    text = when (workingMode) {
+                                        AdbManager.WorkingMode.SIMULATED -> "Demostración segura para usar en vistas previas y pruebas."
+                                        AdbManager.WorkingMode.ROOT_SU -> if (viewModel.adbManager.isRootAvailable()) "Dispositivo con acceso Root concedido." else "Intentando conexión por superusuario ('su')."
+                                        AdbManager.WorkingMode.ADB_WIRELESS -> {
+                                            when (connectionState) {
+                                                is AdbManager.ConnectionState.Connected -> "Conectado a Wireless Debugging"
+                                                is AdbManager.ConnectionState.Connecting -> "Intentando enlace local..."
+                                                is AdbManager.ConnectionState.Error -> (connectionState as AdbManager.ConnectionState.Error).message
+                                                else -> "Sin enlace local activo"
+                                            }
+                                        }
                                     },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            IconButton(onClick = { showGuide = !showGuide }) {
-                                Icon(
-                                    imageVector = if (showGuide) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                                    contentDescription = "Mostrar Guía"
-                                )
+                            
+                            if (workingMode == AdbManager.WorkingMode.ADB_WIRELESS) {
+                                IconButton(onClick = { showGuide = !showGuide }) {
+                                    Icon(
+                                        imageVector = if (showGuide) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                        contentDescription = "Mostrar Guía"
+                                    )
+                                }
                             }
                         }
 
                         // Guide Instructions
-                        AnimatedVisibility(visible = showGuide) {
+                        AnimatedVisibility(visible = showGuide && workingMode == AdbManager.WorkingMode.ADB_WIRELESS) {
                             Surface(
                                 color = MaterialTheme.colorScheme.surface,
                                 shape = RoundedCornerShape(16.dp),
@@ -190,10 +301,10 @@ fun ResolutionChangerApp(
                                     )
                                     Spacer(modifier = Modifier.height(8.dp))
                                     Text(
-                                        text = "1. Ve a Configuración -> Ajustes de desarrollador.\n" +
-                                                "2. Habilita 'Depuración inalámbrica' (Wireless Debugging).\n" +
-                                                "3. Entra ahí y copia la dirección IP (usualmente localhost 127.0.0.1) y el Puerto asignado.\n" +
-                                                "4. Ingresa el puerto abajo y presiona 'Enlazar'. Si aparece un emergente pidiéndote aceptar depuración, acéptalo.",
+                                        text = "1. Abre Configuración -> Opciones de desarrollador.\n" +
+                                                "2. Activa la 'Depuración inalámbrica' (Wireless Debugging).\n" +
+                                                "3. Entra en ella y copia la Dirección IP y el Puerto asignado.\n" +
+                                                "4. Presiona abajo 'Buscar Puertos' para autodetectar el puerto local, ó introduce el puerto manualmente y presiona 'Enlazar'.",
                                         style = MaterialTheme.typography.bodySmall,
                                         lineHeight = 18.sp
                                     )
@@ -201,32 +312,59 @@ fun ResolutionChangerApp(
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(16.dp))
+                        if (workingMode == AdbManager.WorkingMode.ADB_WIRELESS) {
+                            Spacer(modifier = Modifier.height(16.dp))
 
-                        // Port Entry
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            OutlinedTextField(
-                                value = inputPort,
-                                onValueChange = { viewModel.inputPort.value = it },
-                                label = { Text("Puerto local Wireless Debugging") },
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Number,
-                                    imeAction = ImeAction.Go
-                                ),
-                                keyboardActions = KeyboardActions(onGo = {
-                                    keyboardController?.hide()
-                                    viewModel.connectAdb()
-                                }),
-                                leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("port_input"),
-                                shape = RoundedCornerShape(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
+                            // Port Entry & Auto Scan Button
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                OutlinedTextField(
+                                    value = inputPort,
+                                    onValueChange = { viewModel.inputPort.value = it },
+                                    label = { Text("Puerto local (ej: 39821)") },
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Number,
+                                        imeAction = ImeAction.Go
+                                    ),
+                                    keyboardActions = KeyboardActions(onGo = {
+                                        keyboardController?.hide()
+                                        viewModel.connectAdb()
+                                    }),
+                                    leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("port_input"),
+                                    shape = RoundedCornerShape(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                
+                                Button(
+                                    onClick = {
+                                        keyboardController?.hide()
+                                        viewModel.scanActiveAdbPorts()
+                                    },
+                                    enabled = !isScanning,
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                    ),
+                                    modifier = Modifier.height(56.dp)
+                                ) {
+                                    if (isScanning) {
+                                        CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.onSecondaryContainer)
+                                    } else {
+                                        Icon(Icons.Default.Search, contentDescription = "Buscar")
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Auto Buscar")
+                                    }
+                                }
+                            }
+                            
+                            Spacer(modifier = Modifier.height(12.dp))
+                            
                             Button(
                                 onClick = {
                                     keyboardController?.hide()
@@ -238,7 +376,8 @@ fun ResolutionChangerApp(
                                 },
                                 shape = RoundedCornerShape(16.dp),
                                 modifier = Modifier
-                                    .height(56.dp)
+                                    .fillMaxWidth()
+                                    .height(50.dp)
                                     .testTag("connect_button"),
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = if (connectionState == AdbManager.ConnectionState.Connected)
@@ -247,8 +386,21 @@ fun ResolutionChangerApp(
                                         MaterialTheme.colorScheme.primary
                                 )
                             ) {
-                                Text(if (connectionState == AdbManager.ConnectionState.Connected) "Desconectar" else "Enlazar")
+                                Text(
+                                    text = if (connectionState == AdbManager.ConnectionState.Connected) "Desconectar enlace Wireles ADB" else "Establecer enlace local ADB"
+                                )
                             }
+                        } else {
+                            // Quick Action for Simulation / Root
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = if (workingMode == AdbManager.WorkingMode.SIMULATED) 
+                                    "✨ El modo de simulación simula perfectamente las respuestas de la consola wm y refresca la UI en tiempo real." 
+                                    else "⚡ Modo Superusuario: Se utilizará 'su' directo para cambiar el tamaño y densidad de pantalla sin configurar ADB.",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 }
@@ -265,7 +417,7 @@ fun ResolutionChangerApp(
                             .weight(1f)
                             .height(120.dp),
                         shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f))
                     ) {
                         Column(
                             modifier = Modifier
@@ -274,7 +426,7 @@ fun ResolutionChangerApp(
                             verticalArrangement = Arrangement.Center
                         ) {
                             Text(
-                                "Relación Activa",
+                                "Modificación Activa",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.primary,
                                 fontWeight = FontWeight.Bold
@@ -286,7 +438,7 @@ fun ResolutionChangerApp(
                                 fontWeight = FontWeight.ExtraBold
                             )
                             Text(
-                                "DPI: $currentDpi",
+                                "Densidad: $currentDpi DPI",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -298,7 +450,7 @@ fun ResolutionChangerApp(
                             .weight(1f)
                             .height(120.dp),
                         shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.15f))
                     ) {
                         Column(
                             modifier = Modifier
@@ -307,7 +459,7 @@ fun ResolutionChangerApp(
                             verticalArrangement = Arrangement.Center
                         ) {
                             Text(
-                                "Relación Física (Original)",
+                                "Pantalla Física Nativa",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.secondary,
                                 fontWeight = FontWeight.Bold
@@ -320,7 +472,7 @@ fun ResolutionChangerApp(
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
                             )
                             Text(
-                                "DPI: $physicalDpi",
+                                "Densidad original: $physicalDpi DPI",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                             )
@@ -332,7 +484,7 @@ fun ResolutionChangerApp(
             // Presets Header
             item {
                 Text(
-                    text = "Ajustes de Relación de Aspecto",
+                    text = "Ajustes Rápidos de Relación de Aspecto",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(top = 8.dp)
@@ -362,14 +514,12 @@ fun ResolutionChangerApp(
                     SuggestionChip(
                         onClick = {
                             viewModel.inputHeight.value = physicalH.toString()
-                            // Calculate 16:9 corresponding width
                             val scaledW = (physicalH * 9) / 16
                             viewModel.inputWidth.value = scaledW.toString()
-                            // Set suitable density proportionate to scaled width
                             val scaledDensity = (physicalDpi * scaledW) / physicalW
                             viewModel.inputDensity.value = Math.max(72, scaledDensity).toString()
                         },
-                        label = { Text("Cine 16:9") },
+                        label = { Text("Pantallazo 16:9") },
                         icon = { Icon(Icons.Default.AspectRatio, contentDescription = null, modifier = Modifier.size(16.dp)) },
                         modifier = Modifier.testTag("preset_16_9")
                     )
@@ -397,7 +547,7 @@ fun ResolutionChangerApp(
                             val scaledDensity = (physicalDpi * scaledW) / physicalW
                             viewModel.inputDensity.value = Math.max(72, scaledDensity).toString()
                         },
-                        label = { Text("Normal 19.5:9") },
+                        label = { Text("Cine Móvil 19.5:9") },
                         icon = { Icon(Icons.Default.AspectRatio, contentDescription = null, modifier = Modifier.size(16.dp)) },
                         modifier = Modifier.testTag("preset_19_5_9")
                     )
@@ -426,7 +576,7 @@ fun ResolutionChangerApp(
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            text = "Ajustar Medidas Manuales",
+                            text = "Ajustar Dimensiones Manuales",
                             fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.titleMedium
                         )
@@ -464,7 +614,7 @@ fun ResolutionChangerApp(
                         OutlinedTextField(
                             value = inputDpi,
                             onValueChange = { viewModel.inputDensity.value = it },
-                            label = { Text("Densidad DPI (Pantalla Completa)") },
+                            label = { Text("Densidad de Pantalla (DPI)") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -487,7 +637,7 @@ fun ResolutionChangerApp(
                                 shape = RoundedCornerShape(16.dp),
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
                             ) {
-                                Text("Reset a Nativo")
+                                Text("Volver a Nativo")
                             }
 
                             Button(
@@ -525,7 +675,7 @@ fun ResolutionChangerApp(
                             Icon(imageVector = Icons.Default.Terminal, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
-                                "Consola Terminal Avanzada (Opcional)",
+                                "Consola Terminal de Diagnóstico",
                                 fontWeight = FontWeight.Bold,
                                 style = MaterialTheme.typography.titleMedium,
                                 modifier = Modifier.weight(1f)
@@ -641,7 +791,7 @@ fun ResolutionChangerApp(
                                     Text("wm density", style = MaterialTheme.typography.bodySmall)
                                 }
                                 Button(
-                                    onClick = { viewModel.runUserCommand("dumpsys window | grep -i display") },
+                                    onClick = { viewModel.runUserCommand("dumpsys window") },
                                     colors = ButtonDefaults.filledTonalButtonColors(),
                                     shape = RoundedCornerShape(8.dp),
                                     modifier = Modifier.padding(vertical = 4.dp)

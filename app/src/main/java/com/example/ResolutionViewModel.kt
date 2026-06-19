@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
 
 class ResolutionViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -22,6 +23,8 @@ class ResolutionViewModel(application: Application) : AndroidViewModel(applicati
     // Current State
     private val _connectionState = MutableStateFlow<AdbManager.ConnectionState>(AdbManager.ConnectionState.Disconnected)
     val connectionState: StateFlow<AdbManager.ConnectionState> = _connectionState.asStateFlow()
+
+    val workingMode = adbManager.workingMode
 
     // Screen Dimensions State
     val physicalWidth = MutableStateFlow(1080)
@@ -39,7 +42,7 @@ class ResolutionViewModel(application: Application) : AndroidViewModel(applicati
     val inputPort = MutableStateFlow("5555")
 
     // Console logs / terminal output
-    private val _terminalOutput = MutableStateFlow("Bienvenido a Resolution Changer.\nConéctate por ADB local para iniciar.")
+    private val _terminalOutput = MutableStateFlow("Bienvenido a Resolution Changer Pro.\nSelecciona tu método de ejecución abajo.")
     val terminalOutput: StateFlow<String> = _terminalOutput.asStateFlow()
 
     // Safety Countdown State
@@ -48,6 +51,10 @@ class ResolutionViewModel(application: Application) : AndroidViewModel(applicati
 
     private val _safetySecondsLeft = MutableStateFlow(15)
     val safetySecondsLeft: StateFlow<Int> = _safetySecondsLeft.asStateFlow()
+
+    // Port Scanning state
+    private val _isScanning = MutableStateFlow(false)
+    val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
 
     // Backup Safe States before applying test settings
     private var backupWidth = 1080
@@ -62,16 +69,36 @@ class ResolutionViewModel(application: Application) : AndroidViewModel(applicati
             adbManager.connectionState.collectLatest { state ->
                 _connectionState.value = state
                 if (state == AdbManager.ConnectionState.Connected) {
-                    appendLog("¡Conectado exitosamente al ADB Local!")
+                    appendLog("Enlace activo en modo: ${adbManager.workingMode.value.name}")
                     refreshScreenDetails()
                 } else if (state is AdbManager.ConnectionState.Error) {
-                    appendLog("Error de conexión: ${state.message}")
+                    appendLog("Error de enlace: ${state.message}")
                 }
             }
         }
 
         // Initialize display properties locally
         readLocalDisplayMetrics()
+        
+        // Default to simulated mode for immediate ease inside Preview
+        setWorkingMode(AdbManager.WorkingMode.SIMULATED)
+    }
+
+    fun setWorkingMode(mode: AdbManager.WorkingMode) {
+        adbManager.setWorkingMode(mode)
+        appendLog("Modo cambiado a: $mode")
+        if (mode == AdbManager.WorkingMode.SIMULATED) {
+            appendLog("Modo Simulación Activo. Prueba de cambios de pantalla de forma visual y segura.")
+        } else if (mode == AdbManager.WorkingMode.ROOT_SU) {
+            if (adbManager.isRootAvailable()) {
+                appendLog("¡Dispositivo Root detectado! Puedes cambiar la resolución de forma directa sin necesidad de configurar ADB inalámbrico.")
+            } else {
+                appendLog("[Advertencia] No se detectó acceso Root (SU) en este dispositivo. El modo Root requiere que tu dispositivo esté rooteado.")
+            }
+        } else {
+            appendLog("Modo ADB inalámbrico seleccionado. Requiere habilitar la 'Depuración Inalámbrica' en los ajustes de desarrollo.")
+        }
+        refreshScreenDetails()
     }
 
     private fun readLocalDisplayMetrics() {
@@ -81,9 +108,9 @@ class ResolutionViewModel(application: Application) : AndroidViewModel(applicati
         currentDensity.value = dm.densityDpi
 
         // Set inputs initial default value if empty
-        if (inputWidth.value.isEmpty()) inputWidth.value = dm.widthPixels.toString()
-        if (inputHeight.value.isEmpty()) inputHeight.value = dm.heightPixels.toString()
-        if (inputDensity.value.isEmpty()) inputDensity.value = dm.densityDpi.toString()
+        if (inputWidth.value.isEmpty() || inputWidth.value == "1080") inputWidth.value = dm.widthPixels.toString()
+        if (inputHeight.value.isEmpty() || inputHeight.value == "2400") inputHeight.value = dm.heightPixels.toString()
+        if (inputDensity.value.isEmpty() || inputDensity.value == "440") inputDensity.value = dm.densityDpi.toString()
     }
 
     private fun appendLog(line: String) {
@@ -101,12 +128,12 @@ class ResolutionViewModel(application: Application) : AndroidViewModel(applicati
     fun runUserCommand(cmd: String) {
         viewModelScope.launch {
             if (_connectionState.value != AdbManager.ConnectionState.Connected) {
-                appendLog("Error: Debes conectarte a un ADB local antes de enviar comandos.")
+                appendLog("Error: Debes conectar o activar un modo para enviar comandos.")
                 return@launch
             }
             appendLog(cmd)
             val result = adbManager.executeCommand(cmd)
-            appendLog(result.ifEmpty { "[Comando ejecutado sin respuesta visual]" })
+            appendLog(result.ifEmpty { "[Comando ejecutado sin respuesta]" })
             refreshScreenDetails()
         }
     }
@@ -115,6 +142,11 @@ class ResolutionViewModel(application: Application) : AndroidViewModel(applicati
      * Connects to Local ADB at specified port.
      */
     fun connectAdb() {
+        if (adbManager.workingMode.value != AdbManager.WorkingMode.ADB_WIRELESS) {
+            // Force ADB wireless mode if they clicked connect
+            adbManager.setWorkingMode(AdbManager.WorkingMode.ADB_WIRELESS)
+        }
+
         val portInt = inputPort.value.toIntOrNull()
         if (portInt == null || portInt !in 1024..65535) {
             appendLog("Puerto inválido. Ingrese un puerto entre 1024 y 65535 (usualmente el de Depuración Inalámbrica).")
@@ -128,12 +160,72 @@ class ResolutionViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     /**
-     * Disconnects local ADB.
+     * Disconnects local ADB or resets current state.
      */
     fun disconnectAdb() {
         viewModelScope.launch {
             adbManager.disconnect()
-            appendLog("Desconectado de ADB.")
+            appendLog("Sesión ADB desconectada.")
+        }
+    }
+
+    /**
+     * Scans local ports asynchronously using Coroutines to find the active Wireless Debugging port.
+     */
+    fun scanActiveAdbPorts() {
+        if (_isScanning.value) return
+        _isScanning.value = true
+        appendLog("Buscando puertos activos de depuración inalámbrica en localhost (rango 37000..45000)...")
+        
+        viewModelScope.launch(Dispatchers.IO) {
+            // Try standard common port first
+            val firstTryPorts = listOf(5555, 37000, 39000, 41000, 43000, 45000)
+            var found = false
+            
+            for (port in firstTryPorts) {
+                try {
+                    val socket = java.net.Socket()
+                    socket.connect(java.net.InetSocketAddress("127.0.0.1", port), 60)
+                    socket.close()
+                    // Found
+                    inputPort.value = port.toString()
+                    appendLog("¡Puerto común disponible encontrado: $port! Autoconfigurado.")
+                    found = true
+                    break
+                } catch (e: Exception) {}
+            }
+
+            if (!found) {
+                // Async dynamic port range scanning
+                val startPort = 37000
+                val endPort = 45000
+                val batchSize = 100
+                
+                portLoop@ for (i in startPort..endPort step batchSize) {
+                    if (!this.isActive) break
+                    val jobs = (i until minOf(i + batchSize, endPort + 1)).map { port ->
+                        launch {
+                            try {
+                                val socket = java.net.Socket()
+                                socket.connect(java.net.InetSocketAddress("127.0.0.1", port), 40)
+                                socket.close()
+                                if (!found) {
+                                    found = true
+                                    inputPort.value = port.toString()
+                                    appendLog("¡Puerto de depuración inalámbrica encontrado: $port! Autoconfigurado.")
+                                }
+                            } catch (e: Exception) {}
+                        }
+                    }
+                    jobs.forEach { it.join() }
+                    if (found) break@portLoop
+                }
+            }
+
+            if (!found) {
+                appendLog("No se detectó ningún puerto de depuración inalámbrica abierto localmente. Asegúrate de activarla en Opciones de desarrollador.")
+            }
+            _isScanning.value = false
         }
     }
 
@@ -149,9 +241,7 @@ class ResolutionViewModel(application: Application) : AndroidViewModel(applicati
 
             // Read sizing
             val sizeOutput = adbManager.executeCommand("wm size")
-            // Parse sizing
-            // Physical size: 1080x2400
-            // Override size: 720x1600 (optional)
+            
             var pWidth = physicalWidth.value
             var pHeight = physicalHeight.value
             var cWidth = currentWidth.value
@@ -206,12 +296,12 @@ class ResolutionViewModel(application: Application) : AndroidViewModel(applicati
             physicalDensity.value = pDensity
             currentDensity.value = cDensity
 
-            // Sync input selectors
+            // Sync inputs if not focused/empty to allow quick preview refresh
             inputWidth.value = cWidth.toString()
             inputHeight.value = cHeight.toString()
             inputDensity.value = cDensity.toString()
 
-            appendLog("Pantalla actualizada: ${cWidth}x${cHeight} @${cDensity}dpi (Física: ${pWidth}x${pHeight} @${pDensity}dpi)")
+            appendLog("Pantalla registrada: ${cWidth}x${cHeight} @${cDensity}dpi (Física: ${pWidth}x${pHeight} @${pDensity}dpi)")
         }
     }
 
@@ -230,7 +320,7 @@ class ResolutionViewModel(application: Application) : AndroidViewModel(applicati
 
         viewModelScope.launch {
             if (_connectionState.value != AdbManager.ConnectionState.Connected) {
-                appendLog("Error: Debes estar conectado por ADB local para aplicar configuraciones.")
+                appendLog("Error: Debes estar conectado antes de aplicar configuraciones.")
                 return@launch
             }
 
@@ -261,7 +351,7 @@ class ResolutionViewModel(application: Application) : AndroidViewModel(applicati
         viewModelScope.launch {
             cancelCountdown()
             if (_connectionState.value != AdbManager.ConnectionState.Connected) {
-                appendLog("Error: Conéctate a ADB local primero")
+                appendLog("Error: Conéctate o activa una sesión para reestablecer.")
                 return@launch
             }
             appendLog("Restableciendo pantalla a valores de fábrica...")
@@ -277,7 +367,7 @@ class ResolutionViewModel(application: Application) : AndroidViewModel(applicati
      */
     fun confirmKeepChanges() {
         cancelCountdown()
-        appendLog("¡Configuración confirmada y guardada!")
+        appendLog("¡Configuración confirmada por el usuario y guardada!")
     }
 
     /**
@@ -326,11 +416,9 @@ class ResolutionViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     private fun closeAdbGracefully() {
-        // Runs on application shutdown
         try {
             adbManager.connectionState.value.let {
                 if (it == AdbManager.ConnectionState.Connected) {
-                    // Try simple disconnect
                     viewModelScope.launch(Dispatchers.IO) {
                         adbManager.disconnect()
                     }
